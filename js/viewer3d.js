@@ -2,6 +2,12 @@
  * IFC Cage 3D Viewer — viewer3d.js
  * BS 8666 shape rendering. All directions from IFC BRep vertex analysis.
  *
+ * v2 — Solid tube geometry + scene lighting
+ *   Each bar segment is now rendered as a true 3D cylinder (tube) mesh with
+ *   proper normals, lit by ambient + two directional lights, using
+ *   MeshPhongMaterial. This replaces the old LineSegments / LineBasicMaterial
+ *   approach which had no volume or shading.
+ *
  * ═══════════════════════════════════════════════════════════════════════
  * SHAPE 21 VARIANT DETECTION (BRep-proven, tested across P7019 + 2HD70730)
  * ═══════════════════════════════════════════════════════════════════════
@@ -143,6 +149,64 @@ const Viewer3D = (() => {
     return segs;
   }
 
+  // ── Segment endpoint helpers for coupler head placement ───────────────
+  // Walk pts[] backward to find the last segment that has non-zero length.
+  // Returns { ex, ey, ez, ux, uy, uz } — endpoint + unit direction.
+  function _lastSeg(pts) {
+    for (let i = pts.length-6; i >= 0; i -= 6) {
+      const dx=pts[i+3]-pts[i], dy=pts[i+4]-pts[i+1], dz=pts[i+5]-pts[i+2];
+      const len=Math.sqrt(dx*dx+dy*dy+dz*dz);
+      if (len > 0.01) return { ex:pts[i+3],ey:pts[i+4],ez:pts[i+5], ux:dx/len,uy:dy/len,uz:dz/len };
+    }
+    return null;
+  }
+  // Walk pts[] forward to find the first segment with non-zero length.
+  // Returns { sx, sy, sz, ux, uy, uz } — start point + unit direction.
+  function _firstSeg(pts) {
+    for (let i = 0; i < pts.length-5; i += 6) {
+      const dx=pts[i+3]-pts[i], dy=pts[i+4]-pts[i+1], dz=pts[i+5]-pts[i+2];
+      const len=Math.sqrt(dx*dx+dy*dy+dz*dz);
+      if (len > 0.01) return { sx:pts[i],sy:pts[i+1],sz:pts[i+2], ux:dx/len,uy:dy/len,uz:dz/len };
+    }
+    return null;
+  }
+
+  // ── Cylinder tube builder ─────────────────────────────────────────────
+  // Appends one cylinder segment (start→end, radius r, sides-gon cross-section)
+  // into flat posArr / normArr / idxArr arrays.  Returns updated vertex offset.
+  function _addCylinder(posArr, normArr, idxArr, vBase, sx, sy, sz, ex, ey, ez, r, sides) {
+    const dx = ex-sx, dy = ey-sy, dz = ez-sz;
+    const len = Math.sqrt(dx*dx + dy*dy + dz*dz);
+    if (len < 0.01) return vBase;
+    // Unit direction along bar
+    const ux = dx/len, uy = dy/len, uz = dz/len;
+    // Find a perpendicular vector using the least-dominant axis
+    let px, py, pz;
+    const ax = Math.abs(ux), ay = Math.abs(uy), az = Math.abs(uz);
+    if (ax <= ay && ax <= az) { px = 0;   py = -uz;  pz = uy; }
+    else if (ay <= az)        { px = uz;  py = 0;    pz = -ux; }
+    else                      { px = -uy; py = ux;   pz = 0; }
+    const pLen = Math.sqrt(px*px + py*py + pz*pz);
+    px /= pLen; py /= pLen; pz /= pLen;
+    // Second perp: cross(u, p)
+    const qx = uy*pz - uz*py, qy = uz*px - ux*pz, qz = ux*py - uy*px;
+
+    // Build (sides+1) vertex pairs: one ring at start, one at end
+    for (let i = 0; i <= sides; i++) {
+      const a  = (i / sides) * Math.PI * 2;
+      const ca = Math.cos(a), sa = Math.sin(a);
+      const nx = px*ca + qx*sa, ny = py*ca + qy*sa, nz = pz*ca + qz*sa;
+      posArr.push(sx + nx*r, sy + ny*r, sz + nz*r);  normArr.push(nx, ny, nz);
+      posArr.push(ex + nx*r, ey + ny*r, ez + nz*r);  normArr.push(nx, ny, nz);
+    }
+    // Quad faces between adjacent rings
+    for (let i = 0; i < sides; i++) {
+      const i0 = vBase + i*2, i1 = i0+1, i2 = vBase + (i+1)*2, i3 = i2+1;
+      idxArr.push(i0, i2, i1,  i1, i2, i3);
+    }
+    return vBase + (sides+1)*2;
+  }
+
   // ── Scene state ───────────────────────────────────────────────────────
   let _renderer=null,_scene=null,_camera=null;
   let _sph={r:14000,theta:0.65,phi:1.0},_pan=null,_objects={},_animId=null,_resizeObs=null;
@@ -167,6 +231,20 @@ const Viewer3D = (() => {
     _renderer.setPixelRatio(Math.min(devicePixelRatio,2));
     _renderer.setSize(W,H);
     containerEl.appendChild(_renderer.domElement);
+
+    // ── Lighting (key upgrade over v1) ────────────────────────────────
+    // Ambient fills shadows so dark sides aren't pitch-black
+    const ambient = new THREE.AmbientLight(0xffffff, 0.45);
+    _scene.add(ambient);
+    // Key light from upper-right front — main shading source
+    const sun = new THREE.DirectionalLight(0xffeeff, 0.8);
+    sun.position.set(1, 2, 1);
+    _scene.add(sun);
+    // Fill light from opposite side — softens harsh shadows
+    const fill = new THREE.DirectionalLight(0xffffff, 0.5);
+    fill.position.set(-1, 0.5, -1);
+    _scene.add(fill);
+
     _resizeObs=new ResizeObserver(()=>{
       const w=containerEl.clientWidth,h=containerEl.clientHeight;
       if(w&&h){_renderer.setSize(w,h);_camera.aspect=w/h;_camera.updateProjectionMatrix();}
@@ -200,17 +278,94 @@ const Viewer3D = (() => {
       colMap[k]=k.startsWith('Mesh_')?PALETTE[pIdx++%PALETTE.length]:(TYPE_COL[gmap[k].bt]||0x94a3b8);
     });
     keys.forEach(k=>{
-      const g=gmap[k];const pts=[];
+      const g=gmap[k];
+      // Build merged tube geometry for every bar segment in this group
+      const posArr=[], normArr=[], idxArr=[];
+      let vOffset=0;
       g.bars.forEach(b=>{
-        pts.push(...bs8666Segments(b,cx,cy,cz));
-        const r=Math.sqrt((b.Start_X-cx)**2+(b.Start_Y-cy)**2+(b.Start_Z-cz)**2);
-        if(r>maxR)maxR=r;
+        const pts=bs8666Segments(b,cx,cy,cz);
+        // Bar radius: use actual diameter from IFC, floor at 4 mm so thin bars stay visible
+        const r=Math.max((b.Size||b.NominalDiameter_mm||20)/2, 4);
+        for(let i=0;i<pts.length;i+=6){
+          vOffset=_addCylinder(
+            posArr,normArr,idxArr,vOffset,
+            pts[i],pts[i+1],pts[i+2],
+            pts[i+3],pts[i+4],pts[i+5],
+            r, 8  // 8-sided polygon — looks round, stays fast
+          );
+        }
+
+        // ── Griptech coupler head(s) ─────────────────────────────────
+        // Shape-aware end selection:
+        //   Shape 11 (L-bars, e.g. 11LGF): the coupler sits at the START —
+        //     the free straight end before the L-bend. _lastSeg() would return
+        //     the short leg tip, which is the WRONG end.
+        //   All other shapes (00, 13, 21, etc.): coupler at END (last seg tip).
+        //
+        // engine_web-ifc sidesteps this entirely by reading the IFCFACETEDBREP
+        // tessellated solid from IFC where the coupler head is already baked into
+        // the mesh at the physically correct location — no shape-code inference.
+        if(b.Coupler_Suffix && pts.length >= 6){
+          const headR = r * 1.65;  // Griptech sleeve is ~65% wider than bar
+          const hLen  = 55;        // coupler protrudes ~55 mm beyond the bar end
+
+          const shapeNum = parseInt(b.Shape_Code_Base, 10);
+          const couplerAtStart = (shapeNum === 11); // L-bars: coupler at free straight end
+
+          if(couplerAtStart){
+            // Shape 11: protrude backward from Start (opposite to first seg direction)
+            const fs = _firstSeg(pts);
+            if(fs){
+              vOffset=_addCylinder(posArr,normArr,idxArr,vOffset,
+                fs.sx - fs.ux*hLen, fs.sy - fs.uy*hLen, fs.sz - fs.uz*hLen,
+                fs.sx, fs.sy, fs.sz,
+                headR, 10);
+            }
+          } else {
+            // Default: protrude forward from the tip of the last segment
+            const ls = _lastSeg(pts);
+            if(ls){
+              vOffset=_addCylinder(posArr,normArr,idxArr,vOffset,
+                ls.ex, ls.ey, ls.ez,
+                ls.ex + ls.ux*hLen, ls.ey + ls.uy*hLen, ls.ez + ls.uz*hLen,
+                headR, 10);
+            }
+          }
+
+          // Dual-end codes (GMBGF, GFBGM, GFGF, GMGM): also add the opposite end
+          if(b.Coupler_Dual_End){
+            if(couplerAtStart){
+              const ls = _lastSeg(pts);
+              if(ls){
+                vOffset=_addCylinder(posArr,normArr,idxArr,vOffset,
+                  ls.ex, ls.ey, ls.ez,
+                  ls.ex + ls.ux*hLen, ls.ey + ls.uy*hLen, ls.ez + ls.uz*hLen,
+                  headR, 10);
+              }
+            } else {
+              const fs = _firstSeg(pts);
+              if(fs){
+                vOffset=_addCylinder(posArr,normArr,idxArr,vOffset,
+                  fs.sx - fs.ux*hLen, fs.sy - fs.uy*hLen, fs.sz - fs.uz*hLen,
+                  fs.sx, fs.sy, fs.sz,
+                  headR, 10);
+              }
+            }
+          }
+        }
+
+        const dist=Math.sqrt((b.Start_X-cx)**2+(b.Start_Y-cy)**2+(b.Start_Z-cz)**2);
+        if(dist>maxR)maxR=dist;
       });
+      if(posArr.length===0)return;
       const geo=new THREE.BufferGeometry();
-      geo.setAttribute('position',new THREE.Float32BufferAttribute(pts,3));
-      const ls=new THREE.LineSegments(geo,new THREE.LineBasicMaterial({color:colMap[k]}));
-      _scene.add(ls);
-      _objects[k]={mesh:ls,color:colMap[k],bt:gmap[k].bt,count:g.bars.length};
+      geo.setAttribute('position',new THREE.Float32BufferAttribute(posArr,3));
+      geo.setAttribute('normal',  new THREE.Float32BufferAttribute(normArr,3));
+      geo.setIndex(idxArr);
+      const mat=new THREE.MeshPhongMaterial({color:colMap[k], shininess:55, side:THREE.DoubleSide});
+      const mesh=new THREE.Mesh(geo,mat);
+      _scene.add(mesh);
+      _objects[k]={mesh,color:colMap[k],bt:gmap[k].bt,count:g.bars.length};
     });
     _sph={r:Math.max(maxR*2.6,5000),theta:0.65,phi:1.0};
     _pan.set(0,0,0);_updateCamera();

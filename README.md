@@ -1,6 +1,6 @@
 # IFC Rebar Cage Viewer
 
-**Live site:** `https://<your-username>.github.io/ifc-cage-viewer/`
+**Live site:** `https://Asinha145.github.io/ifc-cage-viewer/`
 
 A browser-based tool for parsing, validating and visualising IFC2X3 rebar cage files from the Avonmouth Dock Wall project (Laing O'Rourke / Bylor JV). Runs entirely in the browser — no server, no install.
 
@@ -11,7 +11,8 @@ A browser-based tool for parsing, validating and visualising IFC2X3 rebar cage f
 | Feature | Detail |
 |---------|--------|
 | **IFC parsing** | IFCREINFORCINGBAR, IFCLOCALPLACEMENT, IFCMAPPEDITEM chain |
-| **3D preview** | Three.js r128, all bar types, BS 8666 bent shapes |
+| **3D solid rendering** | Three.js r128 — solid 8-sided tube meshes with Phong shading and 3-light rig |
+| **Griptech couplers** | Shape-aware coupler head geometry (GF, GM, GMB, GFB, GMP, dual-end variants) |
 | **C01 validation** | Unknown bars, missing Avonmouth layer, duplicate GlobalIds, missing ATK weight |
 | **Cage statistics** | Horizontal bar counts, cage height, weight by layer, UDL factor |
 | **Step detection** | Auto-runs on analyse; flags vertical bar top-Z mismatches |
@@ -34,16 +35,31 @@ All shape directions are **IFC BRep-verified** (vertices extracted from IFCFACET
 
 ---
 
+## Griptech Coupler Rendering
+
+Coupler head geometry is added as a wider-diameter cylinder at the correct end of each bar, determined by shape code:
+
+| Shape | Coupler End | Reason |
+|-------|-------------|--------|
+| `00` (Straight) | Far end (End) | Free exposed tip |
+| `11` (L-bar) | Start (free straight end) | Short leg is embedded; long leg free end takes the sleeve |
+| Dual-end (`GFGF`, `GMGM`, `GMBGF`, `GFBGM`) | Both ends | Both ends receive sleeves |
+
+Supported suffixes: `GF`, `GM`, `GMB`, `GFB`, `GMP`, `GFGF`, `GMGM`, `GMBGF`, `GFBGM`.
+
+---
+
 ## File Structure
 
 ```
 ifc-cage-viewer/
 ├── index.html          ← Entry point (open in browser or host on GitHub Pages)
+├── preview.html        ← Quick 3D-only preview (auto-loads example IFC)
 ├── css/
 │   └── style.css       ← All styles
 ├── js/
 │   ├── ifc-parser.js   ← IFCParser class — all parsing logic
-│   ├── viewer3d.js     ← Viewer3D module — 3D rendering (BRep-proven shapes)
+│   ├── viewer3d.js     ← Viewer3D module — solid tube rendering, coupler heads
 │   └── main.js         ← UI, stats, export, step detection
 └── examples/
     └── 2HD70730AC1.ifc ← Sample cage file for testing

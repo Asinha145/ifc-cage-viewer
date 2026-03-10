@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>3D Preview — Solid Tube Rendering</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #07090f; font-family: monospace; color: #e2e8f0; }
+    #header {
+      padding: 10px 16px;
+      background: #0f172a;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border-bottom: 1px solid #1e293b;
+    }
+    #header h1 { font-size: 14px; font-weight: 600; }
+    #status { font-size: 12px; color: #94a3b8; }
+    #container { width: 100vw; height: calc(100vh - 44px); }
+    #container canvas { display: block; }
+  </style>
+</head>
+<body>
+  <div id="header">
+    <h1>IFC Cage Viewer — v2 Solid Tube Preview</h1>
+    <span id="status">Loading example IFC…</span>
+  </div>
+  <div id="container"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="js/ifc-parser.js"></script>
+  <script src="js/viewer3d.js"></script>
+  <script>
+    const status = document.getElementById('status');
+    const container = document.getElementById('container');
+
+    // Auto-load the first available example IFC
+    const examples = ['examples/2HD70730AC1.ifc', 'examples/P7019_C1.ifc'];
+
+    async function loadExample(url) {
+      status.textContent = `Fetching ${url}…`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
+      return res.text();
+    }
+
+    async function run() {
+      let content = null;
+      for (const url of examples) {
+        try { content = await loadExample(url); break; }
+        catch (e) { console.warn(e); }
+      }
+      if (!content) { status.textContent = 'Could not load any example IFC file.'; return; }
+      if (!content.includes('IFCREINFORCINGBAR')) {
+        status.textContent = 'No reinforcing bars found in IFC file.'; return;
+      }
+
+      status.textContent = 'Parsing bars…';
+      const parser = new IFCParser();
+      const bars = await parser.parseFile(content);
+      if (!bars.length) { status.textContent = 'No bars extracted.'; return; }
+
+      status.textContent = `Rendering ${bars.length} bars as 3D cylinders…`;
+      Viewer3D.init(container);
+      const objects = Viewer3D.loadBars(bars);
+
+      const groups = objects ? Object.keys(objects).length : 0;
+      status.textContent = `✓ ${bars.length} bars · ${groups} groups · drag to orbit · scroll to zoom · right-drag to pan`;
+    }
+
+    run().catch(err => { status.textContent = `Error: ${err.message}`; console.error(err); });
+  </script>
+</body>
+</html>

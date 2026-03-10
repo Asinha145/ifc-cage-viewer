@@ -696,14 +696,18 @@ class IFCParser {
      *   Coupler_Type     — human-readable description
      */
     parseShapeCodes(bars) {
-        // Known coupler suffixes, longest-first so we match GMB before GM
+        // Known coupler suffixes, longest-first so we match GMB before GM.
+        // Dual-end codes (both ends have a coupler) are marked with dualEnd=true.
         const SUFFIXES = [
-            ['GMBGF', 'Male Bridging + Female'],
-            ['GFBGM', 'Female Bridging + Male'],
-            ['GMB',   'Male Bridging'],
-            ['GFB',   'Female Bridging'],
-            ['GM',    'Male'],
-            ['GF',    'Female'],
+            ['GMBGF', 'Male Bridging + Female',   true ],
+            ['GFBGM', 'Female Bridging + Male',   true ],
+            ['GFGF',  'Female + Female',           true ],  // two GF couplers
+            ['GMGM',  'Male + Male',               true ],  // two GM couplers
+            ['GMB',   'Male Bridging',             false],
+            ['GFB',   'Female Bridging',           false],
+            ['GMP',   'Male Pin',                  false],  // pin-type male variant
+            ['GM',    'Male',                      false],
+            ['GF',    'Female',                    false],
         ];
 
         bars.forEach(bar => {
@@ -711,19 +715,21 @@ class IFCParser {
             if (!raw) return;
 
             // Find coupler suffix: scan for the first 'G' that starts a known suffix
-            let base = raw, suffix = '', couplerType = null;
-            for (const [sfx, label] of SUFFIXES) {
+            let base = raw, suffix = '', couplerType = null, couplerDualEnd = false;
+            for (const [sfx, label, dual] of SUFFIXES) {
                 const idx = raw.indexOf(sfx);
                 if (idx !== -1) {
-                    base        = raw.slice(0, idx);
-                    suffix      = raw.slice(idx);
-                    couplerType = label;
+                    base           = raw.slice(0, idx);
+                    suffix         = raw.slice(idx);
+                    couplerType    = label;
+                    couplerDualEnd = dual;
                     break;
                 }
             }
-            bar.Shape_Code_Base = base || raw;
-            bar.Coupler_Suffix  = suffix || null;
-            bar.Coupler_Type    = couplerType;
+            bar.Shape_Code_Base    = base || raw;
+            bar.Coupler_Suffix     = suffix || null;
+            bar.Coupler_Type       = couplerType;
+            bar.Coupler_Dual_End   = couplerDualEnd;  // true → heads on both Start and End
         });
     }
 
