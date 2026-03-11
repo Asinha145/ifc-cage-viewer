@@ -698,16 +698,28 @@ class IFCParser {
     parseShapeCodes(bars) {
         // Known coupler suffixes, longest-first so we match GMB before GM.
         // Dual-end codes (both ends have a coupler) are marked with dualEnd=true.
+        // Slash-notation dual-end entries (P7019 style: GF/GF, SGF/LGF etc.)
+        // must appear BEFORE their single-end counterparts to prevent premature matching.
         const SUFFIXES = [
+            // ── Slash-notation dual-end (shape 21 S/L and straight dual-end) ──
+            ['SGMB/LGMB', 'Short & Long Male Bridging',  true ],
+            ['SGF/LGF',   'Short & Long Female',          true ],
+            ['GMB/GMB',   'Male Bridging × 2',            true ],
+            ['GF/GF',     'Female + Female (slash)',       true ],
+            ['GF/GM',     'Female + Male',                true ],
+            ['GM/GF',     'Male + Female',                true ],
+            // ── Existing 4-letter dual-end codes ───────────────────────────
             ['GMBGF', 'Male Bridging + Female',   true ],
             ['GFBGM', 'Female Bridging + Male',   true ],
-            ['GFGF',  'Female + Female',           true ],  // two GF couplers
-            ['GMGM',  'Male + Male',               true ],  // two GM couplers
-            ['GMB',   'Male Bridging',             false],
-            ['GFB',   'Female Bridging',           false],
-            ['GMP',   'Male Pin',                  false],  // pin-type male variant
-            ['GM',    'Male',                      false],
-            ['GF',    'Female',                    false],
+            ['GFGF',  'Female + Female',           true ],
+            ['GMGM',  'Male + Male',               true ],
+            // ── Single-end codes ────────────────────────────────────────────
+            ['DHD',   'Headed Bar',               false],  // headed deformed bar
+            ['GMB',   'Male Bridging',            false],
+            ['GFB',   'Female Bridging',          false],
+            ['GMP',   'Male Pin',                 false],  // pin-type male variant
+            ['GM',    'Male',                     false],
+            ['GF',    'Female',                   false],
         ];
 
         bars.forEach(bar => {

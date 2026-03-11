@@ -309,8 +309,13 @@ const Viewer3D = (() => {
           const headR = r * 1.65;  // Griptech sleeve is ~65% wider than bar
           const hLen  = 55;        // coupler protrudes ~55 mm beyond the bar end
 
-          const shapeNum = parseInt(b.Shape_Code_Base, 10);
-          const couplerAtStart = (shapeNum === 11); // L-bars: coupler at free straight end
+          const shapeNum  = parseInt(b.Shape_Code_Base, 10);
+          const shapeBase = (b.Shape_Code_Base || '').toUpperCase();
+          // Shape 11 (L-bars): coupler at Start — the free straight end before the bend.
+          // Shape 21 S-leg (21SGF, 21SGMB etc.): 'S' = Short leg = Start of pts[] → coupler at Start.
+          // Shape 21 L-leg (21LGMB etc.) and all other shapes: coupler at End (last seg tip).
+          const couplerAtStart = (shapeNum === 11) ||
+                                 (shapeNum === 21 && shapeBase.endsWith('S'));
 
           if(couplerAtStart){
             // Shape 11: protrude backward from Start (opposite to first seg direction)

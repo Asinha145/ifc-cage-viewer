@@ -42,10 +42,12 @@ Coupler head geometry is added as a wider-diameter cylinder at the correct end o
 | Shape | Coupler End | Reason |
 |-------|-------------|--------|
 | `00` (Straight) | Far end (End) | Free exposed tip |
-| `11` (L-bar) | Start (free straight end) | Short leg is embedded; long leg free end takes the sleeve |
-| Dual-end (`GFGF`, `GMGM`, `GMBGF`, `GFBGM`) | Both ends | Both ends receive sleeves |
+| `11` (L-bar) | Start (free straight end) | Long leg free end takes the sleeve |
+| `21S…` (U-bar, Short leg) | Start | Short leg = first pts[] segment |
+| `21L…` (U-bar, Long leg) | End | Long leg = last pts[] segment |
+| Dual-end (`GFGF`, `GMGM`, `GMBGF`, `GFBGM`, slash notation) | Both ends | Both ends receive sleeves |
 
-Supported suffixes: `GF`, `GM`, `GMB`, `GFB`, `GMP`, `GFGF`, `GMGM`, `GMBGF`, `GFBGM`.
+Supported suffixes: `GF`, `GM`, `GMB`, `GFB`, `GMP`, `DHD` (headed bar), `GFGF`, `GMGM`, `GMBGF`, `GFBGM`, `GF/GF`, `GF/GM`, `GM/GF`, `GMB/GMB`, `SGF/LGF`, `SGMB/LGMB`.
 
 ---
 
@@ -62,7 +64,8 @@ ifc-cage-viewer/
 │   ├── viewer3d.js     ← Viewer3D module — solid tube rendering, coupler heads
 │   └── main.js         ← UI, stats, export, step detection
 └── examples/
-    └── 2HD70730AC1.ifc ← Sample cage file for testing
+    ├── 2HD70730AC1.ifc ← Sample cage file (332 bars)
+    └── P7019_C1.ifc    ← P7019 cage (990 bars, slash-notation couplers)
 ```
 
 ---
@@ -139,7 +142,7 @@ A cage is **C01 Rejected** if any of these are true:
 |------|------|--------|-------|
 | `2HD70730AC1.ifc` | 332 | ✅ Accepted | LK1 shape 36, VS1 shape 11+21 |
 | `P165_C2.txt` | 409 | ✅ Accepted | Standard upright cage |
-| `P7019_C1.ifc` | ~600 | ✅ Accepted | Complex stagger clustering |
+| `P7019_C1.ifc` | 990 | ✅ Accepted | Slash-notation couplers (GF/GF, SGF/LGF), 21DHD/13DHD headed bars |
 | `P7019_C2.ifc` | 835 | 🚫 Rejected | 12 unknown U-bars |
 | `P7349_C1.ifc` | 1195 | 🚫 Rejected | 43 unknown bars |
 | `P1346_C1.ifc` | 941 | 🚫 Rejected | 17 unknown U-bars |
